@@ -1,9 +1,11 @@
 // Caché de metadatos: enlaces, incrustaciones, etiquetas, encabezados y propiedades de cada nota.
 import * as yaml from 'js-yaml';
+import { api } from './api.js';
 import {
   Events, debounce, basename, dirname, extname, stem, normalizePath, joinPath, escapeRegExp,
 } from './util.js';
 
+const CACHE_VERSION = 1;
 const FRONTMATTER_RE = /^---[ \t]*\r?\n(?:([\s\S]*?)\r?\n)?(?:---|\.\.\.)[ \t]*(?:\r?\n|$)/;
 const WIKILINK_RE = /(!?)\[\[([^\[\]\n]+?)\]\]/g;
 const MDLINK_RE = /(!?)\[((?:[^\[\]\n]|\[[^\[\]\n]*\])*)\]\(\s*(<[^>\n]+>|[^)\s]+)(?:\s+(?:"[^"\n]*"|'[^'\n]*'))?\s*\)/g;
@@ -86,11 +88,14 @@ export function parseMarkdown(text) {
 
   let m;
   HEADING_RE.lastIndex = 0;
+  let line = 0;
+  let counted = 0;
   while ((m = HEADING_RE.exec(masked))) {
     const start = m.index;
+    for (; counted < start; counted++) if (text.charCodeAt(counted) === 10) line++;
     const original = text.slice(start, start + m[0].length);
     const hm = /^(#{1,6})[ \t]+(.+?)[ \t]*(?:[ \t]#+)?[ \t]*$/.exec(original);
-    result.headings.push({ level: m[1].length, heading: hm ? hm[2] : m[2], position: { start, end: start + m[0].length } });
+    result.headings.push({ level: m[1].length, heading: hm ? hm[2] : m[2], line, position: { start, end: start + m[0].length } });
   }
 
   WIKILINK_RE.lastIndex = 0;
@@ -177,42 +182,96 @@ export class MetadataCache extends Events {
     this.resolvedLinks = {};
     this.unresolvedLinks = {};
     this._resolveSoon = debounce(() => this.resolveAll(), 150);
+    this.saveSoon = debounce(() => this.saveNow(), 4000);
   }
 
-  init() {
+  // Arranca con la caché guardada: solo se leen después, en segundo plano, las notas nuevas o cambiadas.
+  async init() {
     this.rebuildNameIndex();
-    for (const file of this.vault.getMarkdownFiles()) {
-      this.cache.set(file.path, parseMarkdown(this.vault.getContent(file.path) || ''));
+    let saved = null;
+    try {
+      saved = JSON.parse((await api.readMetadataCache()) || 'null');
+    } catch {
+      saved = null;
     }
+    const entries = saved && saved.version === CACHE_VERSION ? saved.files || {} : {};
+    this.stale = [];
+    for (const file of this.vault.getMarkdownFiles()) {
+      const entry = entries[file.path];
+      if (entry && entry.mtime === file.stat.mtime && entry.size === file.stat.size) this.cache.set(file.path, entry.data);
+      else this.stale.push(file);
+    }
+    this.indexed = this.stale.length === 0;
     this.resolveAll();
 
     this.vault.on('create', (file) => {
       this.rebuildNameIndex();
       if (!file.isFolder && file.extension === 'md') this.cache.set(file.path, parseMarkdown(this.vault.getContent(file.path) || ''));
       this._resolveSoon();
+      this.saveSoon();
     });
     this.vault.on('delete', (file) => {
       this.cache.delete(file.path);
       this.rebuildNameIndex();
       this._resolveSoon();
+      this.saveSoon();
     });
     this.vault.on('rename', (file, oldPath) => {
-      const moved = file.isFolder ? this.vault._descendants(file) : [file];
-      if (!file.isFolder) {
-        this.cache.delete(oldPath);
-      } else {
-        for (const key of [...this.cache.keys()]) if (key.startsWith(oldPath + '/')) this.cache.delete(key);
+      // El contenido no cambia al renombrar: se mueven los metadatos a la ruta nueva.
+      const moves = [];
+      for (const key of this.cache.keys()) {
+        if (key === oldPath) moves.push([key, file.path]);
+        else if (file.isFolder && key.startsWith(oldPath + '/')) moves.push([key, file.path + key.slice(oldPath.length)]);
       }
-      for (const f of moved) {
-        if (!f.isFolder && f.extension === 'md') this.cache.set(f.path, parseMarkdown(this.vault.getContent(f.path) || ''));
+      for (const [from, to] of moves) {
+        const data = this.cache.get(from);
+        this.cache.delete(from);
+        this.cache.set(to, data);
       }
+      if (!file.isFolder && file.extension === 'md' && !moves.length) this.cache.set(file.path, parseMarkdown(this.vault.getContent(file.path) || ''));
       this.rebuildNameIndex();
       this._resolveSoon();
+      this.saveSoon();
     });
     this.vault.on('modify', (file, info) => {
       if (!file || file.extension !== 'md') return;
       this.updateText(file.path, this.vault.getContent(file.path) || '', info && info.local);
+      this.saveSoon();
     });
+  }
+
+  // Lee y analiza en segundo plano las notas que no estaban en la caché.
+  async indexStale() {
+    const files = this.stale || [];
+    this.stale = [];
+    for (let i = 0; i < files.length; i += 64) {
+      const chunk = files.slice(i, i + 64).filter((f) => this.vault.getFile(f.path) === f);
+      await this.vault.loadContents(chunk.map((f) => f.path), { silent: true });
+      for (const f of chunk) this.cache.set(f.path, parseMarkdown(this.vault.getContent(f.path) || ''));
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    }
+    this.indexed = true;
+    if (files.length) {
+      this.resolveAll();
+      this.saveSoon.flush();
+    }
+    performance.mark('brain:index-done');
+    this.trigger('indexed');
+  }
+
+  async saveNow() {
+    if (!this.app.isMain) return;
+    const files = {};
+    for (const [path, data] of this.cache) {
+      const file = this.vault.getFile(path);
+      if (file) files[path] = { mtime: file.stat.mtime, size: file.stat.size, data };
+    }
+    const json = JSON.stringify({ version: CACHE_VERSION, files }, (key, value) => (key === 'resolved' ? undefined : value));
+    try {
+      await api.writeMetadataCache(json);
+    } catch (err) {
+      console.error('No se pudo guardar la caché de metadatos', err);
+    }
   }
 
   rebuildNameIndex() {
@@ -358,9 +417,10 @@ export class MetadataCache extends Events {
   }
 
   // Menciones del nombre de una nota que no están enlazadas.
-  getUnlinkedMentions(file) {
+  async getUnlinkedMentions(file) {
     const names = [file.basename, ...this.getAliases(file.path)].filter((n) => n && n.length > 1);
     if (!names.length) return new Map();
+    await this.vault.ensureAllContents();
     const pattern = new RegExp(
       '(?<![\\p{L}\\p{N}_])(' + names.map(escapeRegExp).sort((a, b) => b.length - a.length).join('|') + ')(?![\\p{L}\\p{N}_])',
       'giu',

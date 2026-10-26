@@ -339,6 +339,16 @@ function renderEmbed(app, span, sourcePath, depth) {
   span.classList.add('markdown-embed');
   span.style.display = 'block';
   span.setAttribute('data-href', dest.path);
+  if (app.vault.getContent(dest.path) === undefined) {
+    // El texto aún no está en memoria: se lee y se vuelve a dibujar.
+    app.vault.read(dest.path).then(() => {
+      span.replaceChildren();
+      renderEmbed(app, span, sourcePath, depth);
+    }, () => {
+      span.textContent = `No se pudo leer «${dest.basename}».`;
+    });
+    return;
+  }
   if (depth >= 3) {
     span.appendChild(el('a.internal-link', { text: dest.basename, attr: { 'data-href': dest.path } }));
     return;
@@ -501,11 +511,13 @@ export class HoverPopover {
     }, 350);
   }
 
-  open(target, linktext, sourcePath) {
+  async open(target, linktext, sourcePath) {
     this.close();
     const { linkpath, subpath } = parseLinkInner(linktext);
     const file = linkpath ? this.app.metadataCache.getFirstLinkpathDest(linkpath, sourcePath) : this.app.vault.getFile(sourcePath);
     if (!file) return;
+    if (file.extension === 'md') await this.app.vault.read(file.path);
+    if (!target.isConnected || (this.pendingTarget && this.pendingTarget !== target)) return;
     this.target = target;
     this.el = el('div.popover.hover-popover', { parent: document.body });
     const view = el('div.markdown-preview-view.markdown-rendered', { parent: this.el });

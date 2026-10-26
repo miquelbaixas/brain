@@ -83,6 +83,7 @@ class Bookmarks extends Events {
 
 export class App {
   async init() {
+    performance.mark('brain:init-start');
     this.api = api;
     this.info = await api.init();
     this.isMain = this.info.windowType === 'main';
@@ -100,8 +101,10 @@ export class App {
 
     this.vault = new Vault(this.info);
     await this.vault.load();
+    performance.mark('brain:vault-loaded');
     this.metadataCache = new MetadataCache(this);
-    this.metadataCache.init();
+    await this.metadataCache.init();
+    performance.mark('brain:metadata-ready');
     this.docs = new DocRegistry(this);
     this.fileManager = new FileManager(this);
     this.hoverPopover = new HoverPopover(this);
@@ -118,6 +121,9 @@ export class App {
     await this.workspace.loadLayout(await api.loadWorkspace());
     this.updateTitle();
     if (this.statusBar) this.updateStatusBar();
+    performance.mark('brain:ui-ready');
+    // Las notas nuevas o cambiadas desde la última vez se indexan con la interfaz ya visible.
+    setTimeout(() => this.metadataCache.indexStale(), 0);
   }
 
   /* --------------------------------------------------------- Interfaz */
@@ -246,6 +252,7 @@ export class App {
       try {
         await this.workspace.saveLayout();
         await this.docs.flushAll();
+        await this.metadataCache.saveNow();
       } finally {
         api.flushed(token);
       }

@@ -449,9 +449,13 @@ function buildInline(view) {
               return false;
             }
             if (dest.extension === 'md' && dest.path !== sourcePath) {
-              const text = app.vault.getContent(dest.path) || '';
-              add(from, to, Decoration.replace({ widget: new NoteEmbedWidget(ctx, text, dest.path, subpath) }));
-              return false;
+              const text = app.vault.getContent(dest.path);
+              if (text !== undefined) {
+                add(from, to, Decoration.replace({ widget: new NoteEmbedWidget(ctx, text, dest.path, subpath) }));
+                return false;
+              }
+              // Se carga el texto; al llegar, la vista vuelve a dibujar la incrustación.
+              app.vault.loadContents([dest.path]);
             }
           }
           const attrs = { 'data-href': targetText };

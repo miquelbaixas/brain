@@ -31,6 +31,9 @@ export const api = {
   reload: () => bridge.invoke('window:reload'),
   toggleDevtools: () => bridge.invoke('window:toggle-devtools'),
 
+  readMetadataCache: () => bridge.invoke('cache:read'),
+  writeMetadataCache: (data) => bridge.invoke('cache:write', data),
+
   loadWorkspace: () => bridge.invoke('workspace:load'),
   saveWorkspace: (layout) => bridge.invoke('workspace:save', layout),
 

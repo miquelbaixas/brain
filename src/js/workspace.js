@@ -62,7 +62,25 @@ export class WorkspaceLeaf {
     this.tabHeaderEl = header;
   }
 
+  // Pestaña restaurada que aún no se ha cargado: guarda su estado hasta que se muestre.
+  setDeferred(viewState) {
+    this.deferredState = viewState;
+    this.updateHeader();
+  }
+
+  async loadDeferred() {
+    if (!this.deferredState || this.loadingDeferred) return;
+    this.loadingDeferred = true;
+    const state = this.deferredState;
+    try {
+      await this.workspace.restoreLeafState(this, state);
+    } finally {
+      this.loadingDeferred = false;
+    }
+  }
+
   async setViewState(viewState, { history = true, focus = false } = {}) {
+    this.deferredState = null;
     const type = viewState.type || 'empty';
     const state = viewState.state || {};
     if (history && this.view && this.view.getViewType() !== 'empty') {
@@ -90,6 +108,7 @@ export class WorkspaceLeaf {
   }
 
   getViewState() {
+    if (this.deferredState) return this.deferredState;
     return { type: this.view ? this.view.getViewType() : 'empty', state: this.view ? this.view.getState() : {} };
   }
 
@@ -135,15 +154,26 @@ export class WorkspaceLeaf {
   }
 
   getDisplayText() {
+    if (this.deferredState) {
+      const path = this.deferredState.state && this.deferredState.state.file;
+      if (path) return path.endsWith('.md') ? basename(path).slice(0, -3) : basename(path);
+      return this.deferredState.type === 'graph' ? 'Vista gráfica' : 'Pestaña nueva';
+    }
     return this.view ? this.view.getDisplayText() : 'Pestaña nueva';
+  }
+
+  getType() {
+    if (this.deferredState) return this.deferredState.type || 'empty';
+    return this.view ? this.view.getViewType() : 'empty';
   }
 
   updateHeader() {
     const title = this.getDisplayText();
     this.tabTitleEl.textContent = title;
-    this.tabHeaderEl.setAttribute('data-type', this.view ? this.view.getViewType() : 'empty');
+    this.tabHeaderEl.setAttribute('data-type', this.getType());
     if (this.sidedock) this.tabHeaderEl.setAttribute('aria-label', title);
-    empty(this.tabIconEl).appendChild(icon(this.view ? this.view.getIcon() : 'file'));
+    const deferredIcon = { markdown: 'file-text', graph: 'git-fork', image: 'image', pdf: 'file-text' }[this.getType()] || 'file';
+    empty(this.tabIconEl).appendChild(icon(this.view && !this.deferredState ? this.view.getIcon() : deferredIcon));
     if (this.view && this.view.updateHeader) this.view.updateHeader();
     if (this.workspace.activeLeaf === this) this.workspace.app.updateTitle();
   }
@@ -229,7 +259,8 @@ export class WorkspaceTabs {
       leaf.tabHeaderEl.classList.toggle('is-before-active', i === this.currentTab - 1);
       const wasVisible = leaf.containerEl.classList.contains('is-visible');
       leaf.containerEl.classList.toggle('is-visible', active);
-      if (active && !wasVisible && leaf.view) leaf.view.onShow();
+      if (active && leaf.deferredState && !this.restoring) leaf.loadDeferred();
+      else if (active && !wasVisible && leaf.view) leaf.view.onShow();
     });
   }
 
@@ -1107,23 +1138,33 @@ export class Workspace extends Events {
     if (json.type === 'tabs') {
       const tabs = new WorkspaceTabs(this);
       tabs.size = json.size || 1;
-      for (const leafJson of json.children || []) {
+      const children = json.children || [];
+      const current = Math.min(json.currentTab || 0, Math.max(children.length - 1, 0));
+      tabs.restoring = true;
+      for (const [i, leafJson] of children.entries()) {
         const leaf = new WorkspaceLeaf(this);
         if (leafJson.id) leaf.id = leafJson.id;
         tabs.insertChild(tabs.children.length, leaf);
-        await this.restoreLeafState(leaf, leafJson.state);
+        if (i === current) await this.restoreLeafState(leaf, leafJson.state);
+        else leaf.setDeferred(this.validState(leafJson.state));
       }
+      tabs.restoring = false;
       if (!tabs.children.length) return null;
-      tabs.currentTab = Math.min(json.currentTab || 0, tabs.children.length - 1);
+      tabs.currentTab = current;
       tabs.updateTabDisplay();
       return tabs;
     }
     return null;
   }
 
+  validState(viewState) {
+    const state = viewState || { type: 'empty' };
+    if (state.state && state.state.file && !this.app.vault.getFile(state.state.file)) return { type: 'empty' };
+    return state;
+  }
+
   async restoreLeafState(leaf, viewState) {
-    let state = viewState || { type: 'empty' };
-    if (state.state && state.state.file && !this.app.vault.getFile(state.state.file)) state = { type: 'empty' };
+    const state = this.validState(viewState);
     try {
       await leaf.setViewState(state, { history: false });
     } catch (err) {
@@ -1211,8 +1252,13 @@ export class Workspace extends Events {
 
   /* ---------------------------------------------- Cambios en archivos */
 
-  onFileRenamed(file) {
+  onFileRenamed(file, oldPath) {
     this.iterateAllLeaves((leaf) => {
+      const deferredFile = leaf.deferredState && leaf.deferredState.state && leaf.deferredState.state.file;
+      if (deferredFile && oldPath && (deferredFile === oldPath || (file.isFolder && deferredFile.startsWith(oldPath + '/')))) {
+        leaf.deferredState.state.file = file.path + deferredFile.slice(oldPath.length);
+        leaf.updateHeader();
+      }
       if (leaf.view && leaf.view.file && (leaf.view.file === file || (file.isFolder && leaf.view.file.path.startsWith(file.path + '/')))) {
         leaf.view.onFileRenamed(file);
       }
@@ -1224,6 +1270,7 @@ export class Workspace extends Events {
   onFileDeleted(file) {
     const leaves = [];
     this.iterateRootLeaves((leaf) => {
+      if (leaf.deferredState && leaf.deferredState.state && leaf.deferredState.state.file === file.path) leaf.setDeferred({ type: 'empty' });
       if (leaf.view && leaf.view.file === file) leaves.push(leaf);
     });
     for (const leaf of leaves) {

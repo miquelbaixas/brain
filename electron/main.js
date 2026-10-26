@@ -4,6 +4,7 @@ const path = require('path');
 const fs = require('fs');
 const fsp = fs.promises;
 const os = require('os');
+const crypto = require('crypto');
 
 const STARTER_DIR = path.join(__dirname, '..', 'starter');
 const CONFIG_DIR = '.brain';
@@ -494,6 +495,28 @@ handle('shell:reveal', (_event, rel) => shell.showItemInFolder(abs(rel)));
 handle('shell:open-path', (_event, rel) => shell.openPath(abs(rel)));
 handle('shell:open-external', (_event, url) => {
   if (/^(https?|mailto|tel):/i.test(url)) return shell.openExternal(url);
+});
+
+// Caché de metadatos de la bóveda (enlaces, etiquetas, encabezados) para arrancar sin leer todas las notas.
+function metadataCacheFile() {
+  const id = crypto.createHash('sha1').update(vaultPath || '').digest('hex').slice(0, 16);
+  return path.join(USER_DATA, 'metadata', id + '.json');
+}
+
+handle('cache:read', async () => {
+  try {
+    return await fsp.readFile(metadataCacheFile(), 'utf8');
+  } catch {
+    return null;
+  }
+});
+
+handle('cache:write', async (_event, data) => {
+  const file = metadataCacheFile();
+  await fsp.mkdir(path.dirname(file), { recursive: true });
+  const tmp = file + '.tmp';
+  await fsp.writeFile(tmp, data, 'utf8');
+  await fsp.rename(tmp, file);
 });
 
 handle('window:popout', (_event, { layout }) => {

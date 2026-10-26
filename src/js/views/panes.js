@@ -154,13 +154,20 @@ export class SearchView extends View {
     this.clearEl.style.display = this.query ? '' : 'none';
   }
 
-  search() {
+  async search() {
+    const token = (this.searchToken = (this.searchToken || 0) + 1);
     this.updateClear();
     empty(this.resultsEl);
     empty(this.infoEl);
     this.app.workspace.requestSaveLayout();
     const terms = parseQuery(this.query.trim());
     if (!terms.length) return;
+    if (terms.some((t) => !t.op || t.op === 'line')) {
+      el('div', { text: 'Buscando…', parent: this.infoEl });
+      await this.app.vault.ensureAllContents();
+      if (token !== this.searchToken) return;
+      empty(this.infoEl);
+    }
     const mc = this.app.metadataCache;
     const results = [];
     for (const file of this.app.vault.getMarkdownFiles()) {
@@ -327,18 +334,22 @@ export class BacklinkView extends View {
     this.render();
   }
 
-  render() {
+  async render() {
     if (!this.leaf.containerEl.classList.contains('is-visible') && this.rendered) return;
     this.rendered = true;
-    empty(this.paneEl);
+    const token = (this.renderToken = (this.renderToken || 0) + 1);
     const file = this.app.workspace.getLastActiveFile();
     if (!file || file.extension !== 'md') {
+      empty(this.paneEl);
       el('div.pane-empty', { text: 'No hay ninguna nota activa.', parent: this.paneEl });
       return;
     }
     const mc = this.app.metadataCache;
     const backlinks = mc.getBacklinksForFile(file.path);
     const sources = [...backlinks.keys()].filter((p) => p !== file.path).sort((a, b) => compareNames(a, b));
+    await this.app.vault.loadContents(sources, { silent: true });
+    if (token !== this.renderToken) return;
+    empty(this.paneEl);
     const linkedContainer = el('div.search-result-container');
     collapsibleHeader(this.paneEl, 'Menciones enlazadas', sources.length, this.collapsedLinked, (collapsed) => {
       this.collapsedLinked = collapsed;
@@ -361,9 +372,12 @@ export class BacklinkView extends View {
     }
 
     const unlinkedContainer = el('div.search-result-container');
-    const renderUnlinked = () => {
+    const renderUnlinked = async () => {
       empty(unlinkedContainer);
-      const mentions = mc.getUnlinkedMentions(file);
+      el('div.search-empty-state', { text: 'Buscando menciones…', parent: unlinkedContainer });
+      const mentions = await mc.getUnlinkedMentions(file);
+      if (token !== this.renderToken) return;
+      empty(unlinkedContainer);
       const paths = [...mentions.keys()].sort((a, b) => compareNames(a, b));
       unlinkedHeader.querySelector('.tree-item-flair').textContent = String(paths.length);
       if (!paths.length) el('div.search-empty-state', { text: 'No se encontraron menciones sin enlazar.', parent: unlinkedContainer });
@@ -464,8 +478,9 @@ export class OutgoingLinkView extends View {
     }
 
     const unlinked = el('div.search-result-container');
-    const renderUnlinked = () => {
+    const renderUnlinked = async () => {
       empty(unlinked);
+      await this.app.vault.loadContents([file.path], { silent: true });
       const text = this.app.vault.getContent(file.path) || '';
       const masked = maskText(text, { links: true });
       const linked = new Set(links.map((l) => l.resolved).filter(Boolean));
@@ -680,7 +695,7 @@ export class OutlineView extends View {
       }
       el('div.tree-item-inner', { text: h.heading.replace(/\[\[([^\]|]*\|)?([^\]]*)\]\]/g, '$2').replace(/[*_`=~]/g, ''), parent: self });
       self.addEventListener('click', () => {
-        const line = text.slice(0, h.position.start).split('\n').length - 1;
+        const line = h.line != null ? h.line : text.slice(0, h.position.start).split('\n').length - 1;
         const leaf = this.app.workspace.getActiveRootLeaf();
         if (leaf && leaf.view && leaf.view.file === file) leaf.view.setEphemeralState({ line });
       });

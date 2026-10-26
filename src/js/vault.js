@@ -56,7 +56,20 @@ export class Vault extends Events {
     const entries = await api.list('');
     entries.sort((a, b) => a.path.split('/').length - b.path.split('/').length);
     for (const entry of entries) this._insert(entry);
-    await this._readAll(this.getMarkdownFiles());
+    performance.mark('brain:vault-listed');
+  }
+
+  // Carga el texto de las notas indicadas que aún no estén en memoria.
+  async loadContents(paths, { silent = false } = {}) {
+    const missing = [...new Set(paths)].filter((p) => !this.contents.has(p) && this.getFile(p) && extname(p) === 'md');
+    if (!missing.length) return;
+    await this._readAll(missing.map((p) => this.getFile(p)));
+    if (!silent) this.trigger('content-loaded', missing);
+  }
+
+  // Todas las notas en memoria (para buscar en todo el texto).
+  async ensureAllContents() {
+    await this.loadContents(this.getMarkdownFiles().map((f) => f.path), { silent: true });
   }
 
   async _readAll(files) {

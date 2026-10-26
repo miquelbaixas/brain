@@ -70,6 +70,7 @@ export class MarkdownView extends FileView {
       if (this.mode === 'preview') this.renderPreviewSoon();
     }, 500);
     this.registerEvent(app.metadataCache.on('resolved', refreshLinks));
+    this.registerEvent(app.vault.on('content-loaded', refreshLinks));
     this.registerEvent(app.settings.on('change', (key, value) => this.onSettingChange(key, value)));
     this.applyDisplaySettings();
   }
