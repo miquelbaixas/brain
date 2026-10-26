@@ -1,0 +1,11 @@
+# Dependencias y compilados (se regeneran con npm install / npm run build)
+node_modules/
+dist/
+Brain.app/
+
+# Datos personales: notas y estado de la app
+vault/
+.userdata/
+
+.DS_Store
+*.log
