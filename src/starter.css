@@ -1,0 +1,125 @@
+/* Ventana de inicio: elegir o crear la bóveda. */
+
+body.starter {
+  user-select: none;
+}
+
+.starter-drag {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: var(--header-height);
+  -webkit-app-region: drag;
+  z-index: 1;
+}
+
+.starter-container {
+  display: flex;
+  height: 100%;
+}
+
+.starter-recent {
+  width: 240px;
+  flex: 0 0 240px;
+  background-color: var(--background-secondary);
+  border-right: 1px solid var(--divider-color);
+  padding: calc(var(--header-height) + var(--size-4-2)) var(--size-4-2) var(--size-4-4);
+  overflow-y: auto;
+}
+
+.starter-recent-title {
+  color: var(--text-faint);
+  font-size: var(--font-ui-smaller);
+  font-weight: var(--font-semibold);
+  padding: 0 var(--size-4-2) var(--size-4-2);
+}
+
+.starter-recent-item {
+  position: relative;
+  -webkit-app-region: no-drag;
+  padding: var(--size-4-2);
+  border-radius: var(--radius-m);
+  cursor: default;
+}
+
+.starter-recent-item:hover {
+  background-color: var(--background-modifier-hover);
+}
+
+.starter-recent-name {
+  color: var(--text-normal);
+  font-size: var(--font-ui-small);
+  font-weight: var(--font-medium);
+}
+
+.starter-recent-path {
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  margin-top: 2px;
+}
+
+.starter-recent-empty {
+  color: var(--text-faint);
+  font-size: var(--font-ui-small);
+  padding: 0 var(--size-4-2);
+}
+
+.starter-main {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: var(--size-4-12) var(--size-4-8) var(--size-4-6);
+  overflow-y: auto;
+}
+
+.starter-logo {
+  width: 72px;
+  height: 72px;
+}
+
+.starter-name {
+  font-size: 26px;
+  font-weight: var(--font-bold);
+  margin-top: var(--size-4-2);
+}
+
+.starter-version {
+  color: var(--text-muted);
+  font-size: var(--font-ui-small);
+  margin: var(--size-2-2) 0 var(--size-4-6);
+}
+
+.starter-panel {
+  width: 100%;
+  max-width: 440px;
+  -webkit-app-region: no-drag;
+}
+
+.starter-panel input[type="text"] {
+  width: 170px;
+}
+
+.starter-path {
+  word-break: break-all;
+}
+
+.starter-buttons {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--size-4-2);
+  margin-top: var(--size-4-4);
+}
+
+.starter-error {
+  color: var(--text-error);
+  font-size: var(--font-ui-small);
+  margin-top: var(--size-4-3);
+  min-height: 1.2em;
+  max-width: 440px;
+  text-align: center;
+}

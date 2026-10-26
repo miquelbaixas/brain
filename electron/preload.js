@@ -9,6 +9,7 @@ const INVOKE = new Set([
   'window:popout', 'window:close', 'window:new', 'window:reload', 'window:toggle-devtools',
   'workspace:load', 'workspace:save',
   'broadcast', 'theme:set', 'theme:is-dark', 'edit:action',
+  'starter:info', 'starter:pick-folder', 'starter:create', 'starter:open',
 ]);
 
 const EVENTS = new Set([

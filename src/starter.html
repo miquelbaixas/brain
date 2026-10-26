@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta http-equiv="Content-Security-Policy"
+    content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:" />
+  <title>Brain</title>
+  <link rel="stylesheet" href="app.css" />
+  <link rel="stylesheet" href="starter.css" />
+</head>
+<body class="theme-dark mod-macos starter">
+  <div class="starter-drag"></div>
+  <div class="starter-container">
+    <aside class="starter-recent">
+      <div class="starter-recent-title">Bóvedas recientes</div>
+      <div class="starter-recent-list" id="recent"></div>
+    </aside>
+    <main class="starter-main">
+      <img class="starter-logo" src="assets/brain.png" alt="" />
+      <div class="starter-name">Brain</div>
+      <div class="starter-version" id="version"></div>
+
+      <section id="choose" class="starter-panel">
+        <div class="setting-items">
+          <div class="setting-item">
+            <div class="setting-item-info">
+              <div class="setting-item-name">Crear bóveda nueva</div>
+              <div class="setting-item-description">Crea una carpeta nueva con unas notas de bienvenida.</div>
+            </div>
+            <div class="setting-item-control"><button class="mod-cta" id="go-create">Crear</button></div>
+          </div>
+          <div class="setting-item">
+            <div class="setting-item-info">
+              <div class="setting-item-name">Abrir carpeta como bóveda</div>
+              <div class="setting-item-description">Elige una carpeta que ya tenga notas en markdown.</div>
+            </div>
+            <div class="setting-item-control"><button id="open">Abrir</button></div>
+          </div>
+        </div>
+      </section>
+
+      <section id="create" class="starter-panel is-hidden">
+        <div class="setting-items">
+          <div class="setting-item">
+            <div class="setting-item-info">
+              <div class="setting-item-name">Nombre de la bóveda</div>
+              <div class="setting-item-description">Será el nombre de la carpeta donde se guardan tus notas.</div>
+            </div>
+            <div class="setting-item-control"><input type="text" id="name" value="Mis notas" spellcheck="false" /></div>
+          </div>
+          <div class="setting-item">
+            <div class="setting-item-info">
+              <div class="setting-item-name">Ubicación</div>
+              <div class="setting-item-description starter-path" id="parent"></div>
+            </div>
+            <div class="setting-item-control"><button id="browse">Examinar</button></div>
+          </div>
+        </div>
+        <div class="starter-buttons">
+          <button id="back">Atrás</button>
+          <button class="mod-cta" id="create-go">Crear</button>
+        </div>
+      </section>
+
+      <div class="starter-error" id="error"></div>
+    </main>
+  </div>
+  <script src="starter.js"></script>
+</body>
+</html>

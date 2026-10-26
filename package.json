@@ -2,7 +2,14 @@
   "name": "brain",
   "productName": "Brain",
   "version": "1.0.0",
-  "description": "Editor de notas markdown al estilo Obsidian",
+  "description": "Editor de notas markdown inspirado en Obsidian, con sus funciones básicas",
+  "author": "Miquel Baixas",
+  "license": "MIT",
+  "homepage": "https://github.com/miquelbaixas/brain",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/miquelbaixas/brain.git"
+  },
   "main": "electron/main.js",
   "private": true,
   "scripts": {
@@ -10,7 +17,8 @@
     "start": "node build.mjs && electron .",
     "dev": "node build.mjs --watch & electron .",
     "icon": "electron scripts/make-icon.cjs",
-    "package": "node build.mjs && node scripts/package.mjs"
+    "package": "node build.mjs && node scripts/package.mjs",
+    "postinstall": "node node_modules/electron/install.js"
   },
   "devDependencies": {
     "@codemirror/autocomplete": "^6.20.4",

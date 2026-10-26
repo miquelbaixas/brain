@@ -5,21 +5,28 @@ const fs = require('fs');
 const fsp = fs.promises;
 const os = require('os');
 
-const BRAIN_HOME = path.join(os.homedir(), 'brain');
-const USER_DATA = path.join(BRAIN_HOME, '.userdata');
-const CONFIG_FILE = path.join(USER_DATA, 'config.json');
-const DEFAULT_VAULT = path.join(BRAIN_HOME, 'vault');
 const STARTER_DIR = path.join(__dirname, '..', 'starter');
 const CONFIG_DIR = '.brain';
 
-app.setName('Brain');
-app.setPath('userData', USER_DATA);
+// Modo portátil: si junto a Brain.app (o junto al código, en desarrollo) existe una carpeta
+// `.userdata`, los datos de la app se guardan ahí. Si no, en la ubicación estándar del sistema.
+function portableBase() {
+  if (!app.isPackaged) return app.getAppPath();
+  return process.platform === 'darwin' ? path.resolve(process.execPath, '../../../..') : path.dirname(process.execPath);
+}
 
-let config = { vault: DEFAULT_VAULT, recent: [] };
-let vaultPath = DEFAULT_VAULT;
+app.setName('Brain');
+const PORTABLE_DATA = path.join(portableBase(), '.userdata');
+if (process.env.BRAIN_USER_DATA) app.setPath('userData', path.resolve(process.env.BRAIN_USER_DATA));
+else if (fs.existsSync(PORTABLE_DATA)) app.setPath('userData', PORTABLE_DATA);
+const USER_DATA = app.getPath('userData');
+const CONFIG_FILE = path.join(USER_DATA, 'config.json');
+
+let config = { vault: null, recent: [] };
+let vaultPath = null;
 let watcher = null;
 let isQuitting = false;
-let nextPopoutId = 1;
+let starterWin = null;
 
 // Registro de ventanas abiertas: id de BrowserWindow -> { win, type, layout, flushed }
 const windows = new Map();
@@ -30,7 +37,6 @@ function loadConfig() {
   try {
     config = { ...config, ...JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf8')) };
   } catch {}
-  if (!config.vault) config.vault = DEFAULT_VAULT;
 }
 
 function saveConfig() {
@@ -49,11 +55,18 @@ function copyDirSync(from, to) {
 }
 
 function ensureVault(dir) {
-  if (!fs.existsSync(dir)) {
-    if (dir === DEFAULT_VAULT && fs.existsSync(STARTER_DIR)) copyDirSync(STARTER_DIR, dir);
-    else fs.mkdirSync(dir, { recursive: true });
-  }
   fs.mkdirSync(path.join(dir, CONFIG_DIR), { recursive: true });
+}
+
+// Crea una bóveda nueva con las notas de bienvenida.
+function createVault(parent, name) {
+  const clean = String(name || '').trim();
+  if (!clean || /[\\/:*?"<>|]/.test(clean) || clean.startsWith('.')) throw new Error('Ese nombre de carpeta no es válido.');
+  const target = path.join(parent, clean);
+  if (fs.existsSync(target) && fs.readdirSync(target).length) throw new Error('Ya existe una carpeta con ese nombre y no está vacía.');
+  fs.mkdirSync(target, { recursive: true });
+  if (fs.existsSync(STARTER_DIR)) copyDirSync(STARTER_DIR, target);
+  return target;
 }
 
 /* ------------------------------------------------------------- Rutas seguras */
@@ -371,7 +384,7 @@ async function chooseVault(parent) {
     properties: ['openDirectory', 'createDirectory'],
   });
   if (result.canceled || !result.filePaths.length) return;
-  await switchVault(result.filePaths[0]);
+  await startWithVault(result.filePaths[0]);
 }
 
 /* -------------------------------------------------------------------- IPC */
@@ -547,6 +560,77 @@ handle('theme:is-dark', () => nativeTheme.shouldUseDarkColors);
 
 nativeTheme.on('updated', () => broadcast('theme:updated', nativeTheme.shouldUseDarkColors));
 
+/* ------------------------------------------------------- Ventana de inicio */
+
+// Se muestra cuando todavía no hay ninguna bóveda: crear una nueva o abrir una carpeta.
+function showStarter() {
+  if (starterWin && !starterWin.isDestroyed()) {
+    starterWin.focus();
+    return;
+  }
+  starterWin = new BrowserWindow({
+    width: 760,
+    height: 480,
+    resizable: false,
+    maximizable: false,
+    fullscreenable: false,
+    show: false,
+    title: 'Brain',
+    titleBarStyle: 'hidden',
+    trafficLightPosition: { x: 14, y: 14 },
+    backgroundColor: backgroundColor(),
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.js'),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+    },
+  });
+  starterWin.loadFile(path.join(__dirname, '..', 'src', 'starter.html'));
+  starterWin.once('ready-to-show', () => starterWin.show());
+  starterWin.on('closed', () => {
+    starterWin = null;
+  });
+}
+
+async function startWithVault(dir) {
+  if (windows.size) {
+    await switchVault(dir);
+  } else {
+    openVault(dir);
+    openVaultWindows();
+  }
+  if (starterWin && !starterWin.isDestroyed()) starterWin.close();
+}
+
+handle('starter:info', () => ({
+  version: app.getVersion(),
+  recent: (config.recent || []).filter((p) => fs.existsSync(p)),
+  defaultParent: fs.existsSync(path.join(os.homedir(), 'Documents')) ? path.join(os.homedir(), 'Documents') : os.homedir(),
+}));
+
+handle('starter:pick-folder', async (event, defaultPath) => {
+  const result = await dialog.showOpenDialog(BrowserWindow.fromWebContents(event.sender), {
+    title: 'Elegir carpeta',
+    buttonLabel: 'Elegir',
+    defaultPath: defaultPath || os.homedir(),
+    properties: ['openDirectory', 'createDirectory'],
+  });
+  return result.canceled || !result.filePaths.length ? null : result.filePaths[0];
+});
+
+handle('starter:create', async (_event, parent, name) => {
+  const target = createVault(parent, name);
+  await startWithVault(target);
+  return target;
+});
+
+handle('starter:open', async (_event, dir) => {
+  if (!dir || !fs.existsSync(dir) || !fs.statSync(dir).isDirectory()) throw new Error('La carpeta no existe.');
+  await startWithVault(dir);
+  return dir;
+});
+
 /* ------------------------------------------------------------------- Menú */
 
 function sendCommand(id) {
@@ -689,16 +773,18 @@ if (!app.requestSingleInstanceLock()) {
 
   app.whenReady().then(() => {
     loadConfig();
-    let target = config.vault;
-    if (!target || (!fs.existsSync(target) && target !== DEFAULT_VAULT)) target = DEFAULT_VAULT;
-    openVault(target);
     buildMenu();
     app.setAboutPanelOptions({
       applicationName: 'Brain',
       applicationVersion: app.getVersion(),
       copyright: 'Notas en markdown, enlazadas como tu cerebro.',
     });
-    openVaultWindows();
+    if (config.vault && fs.existsSync(config.vault)) {
+      openVault(config.vault);
+      openVaultWindows();
+    } else {
+      showStarter();
+    }
   });
 
   app.on('before-quit', () => {

@@ -27,6 +27,7 @@ const [appDir] = await packager({
     /^\/Brain\.app($|\/)/,
     /^\/scripts($|\/)/,
     /^\/build($|\/)/,
+    /^\/docs($|\/)/,
     /^\/build\.mjs$/,
     /^\/package-lock\.json$/,
     /^\/README\.md$/,
@@ -34,7 +35,8 @@ const [appDir] = await packager({
   ],
 });
 
-const target = path.join(root, 'Brain.app');
+// BRAIN_PACKAGE_DIR permite generar la app en otra carpeta (por ejemplo, para probarla).
+const target = path.join(process.env.BRAIN_PACKAGE_DIR || root, 'Brain.app');
 fs.rmSync(target, { recursive: true, force: true });
 fs.renameSync(path.join(appDir, 'Brain.app'), target);
 fs.rmSync(out, { recursive: true, force: true });

@@ -2,7 +2,7 @@
 tags: [inicio, brain]
 creado: 2026-10-25
 ---
-Esta es tu nueva bóveda. Todo lo que escribas se guarda como archivos markdown normales en la carpeta `~/brain/vault`, así que siempre podrás abrirlos con cualquier otro editor.
+Esta es tu nueva bóveda. Todo lo que escribas se guarda como archivos markdown normales dentro de su carpeta, así que siempre podrás abrirlos con cualquier otro editor.
 
 ## Lo básico
 
