@@ -618,10 +618,13 @@ export class Workspace extends Events {
     const c = node.containerEl;
     c.className = `workspace-split mod-${node.direction}` + (node.isRoot ? ' mod-root' : '');
     const wanted = [];
+    // Proporciones normalizadas: si queda un solo panel ocupa todo el espacio.
+    const total = node.children.reduce((sum, child) => sum + (child.size || 1), 0) || 1;
     node.children.forEach((child, i) => {
       this.renderNode(child);
       wanted.push(child.containerEl);
-      child.containerEl.style.flexGrow = String(child.size || 1);
+      child.size = (child.size || 1) / total;
+      child.containerEl.style.flexGrow = String(child.size);
       if (i < node.children.length - 1) {
         if (child.resizeHandleEl.parentNode !== child.containerEl) child.containerEl.appendChild(child.resizeHandleEl);
         this.bindResize(node, i);
